@@ -60,7 +60,7 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
 
       - name: Build the browser emulator
-        run: web/emu/build.sh
+        run: sh web/emu/build.sh
 
       - name: Assemble the site
         run: |
