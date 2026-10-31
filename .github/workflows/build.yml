@@ -1,0 +1,117 @@
+# Build the firmware and the browser emulator on every push. Pushes to main also publish a site (GitHub Pages) with:
+#   /webapp/try/        the browser emulator (play the current build)
+#   /webapp/installer/  the browser installer (flash the current build over USB, Chrome or Edge)
+#   /webapp/editor/     the editor
+#   /firmware/          the .fwsc package
+name: Build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python packages (UI fonts and icons are rasterised at build time)
+        run: pip install Pillow fonttools
+
+      - name: Cache the JieLi toolchain and SDK files
+        id: jieli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.jieli
+            ~/fw-AC79_AIoT_SDK
+          key: jieli-${{ hashFiles('tools/get_toolchain.sh') }}-AC79NN_SDK_V1.2.1_2023-12-13
+
+      - name: JieLi toolchain (clang 4.0.1 for pi32v2)
+        if: steps.jieli.outputs.cache-hit != 'true'
+        run: tools/get_toolchain.sh
+
+      - name: JieLi AC79 SDK (only cpu/wl82/tools is used)
+        if: steps.jieli.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+          git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools
+
+      - name: Build the firmware
+        run: ./build.sh
+
+      - uses: mymindstorm/setup-emsdk@v14
+
+      - name: Build the browser emulator
+        run: web/emu/build.sh
+
+      - name: Assemble the site
+        run: |
+          python3 web/make_site.py build/felucca.fwsc "dev-${GITHUB_SHA::7}" site
+          mkdir -p site/webapp/try
+          cp -r build/emu/. site/webapp/try/
+          cat > site/index.html <<HTML
+          <!DOCTYPE html>
+          <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Build ${GITHUB_SHA::7}</title>
+          <style>body{background:#07060d;color:#e8e6f0;font:16px/1.6 ui-monospace,monospace;max-width:40rem;margin:3rem auto;padding:0 1rem}
+          a{color:#ff2bd6;font-size:1.25rem}small{color:#5ef0ff}</style></head><body>
+          <h1>// BUILD ${GITHUB_SHA::7}</h1>
+          <p><a href="webapp/try/">&gt; PLAY in the browser</a><br><small>the emulator: same code as the device, no CPU limit</small></p>
+          <p><a href="webapp/installer/">&gt; FLASH to the FM-1</a><br><small>Chrome or Edge, USB. Back up first. At your own risk.</small></p>
+          <p><a href="webapp/editor/">&gt; EDITOR</a></p>
+          </body></html>
+          HTML
+
+      - name: Upload the firmware files
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            build/felucca.fwsc
+            build/felucca.bin
+            build/loader/ota.bin
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      # Sound golden renders, CPU budget per preset, voices, UI layout. Report only for now: changing a sound
+      # on purpose changes its golden hash, and that should not stop the site from updating.
+      - name: Host tests (report only)
+        continue-on-error: true
+        run: |
+          export AC79_SDK="$HOME/fw-AC79_AIoT_SDK"
+          tests/run_tests.sh
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
