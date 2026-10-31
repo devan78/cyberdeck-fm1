@@ -265,6 +265,7 @@ static void web_power_on(void)
 {
     persist_boot();
     settings_init();
+    settings_first_boot();                /* main.c: LINE on a fresh install (ui_draw.c, cyberdeck-fm1) */
     usb_serial_apply();
     lcd_init();
     draw_splash();                        /* main.c: the splash (ui_draw.c) */

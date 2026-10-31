@@ -110,6 +110,7 @@ static void fm1_main(void)
         ota_boot_cleanup();                             /* staging area left by an update */
 #endif
     settings_init();
+    settings_first_boot();                              /* cyberdeck-fm1: LINE on a fresh install (ui_draw.c) */
     usb_serial_apply();                                 /* (#67: the saved USB SERIAL before usb_start) */
     lcd_init();
     draw_splash();                                      /* ui_draw.c (1.1.5) */

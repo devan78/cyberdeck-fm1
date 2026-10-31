@@ -55,9 +55,9 @@ PALETTES = [
     # 1.0.2: black and white (the derived tokens are set, not blended: bw()); the old MONO is GREY (id 0)
     # 1.8: its primary and secondary GREY's red and blue (were white)
     ("MONO",   (0, 0, 0),       (255, 255, 255), (255, 255, 255), RED,       (72, 140, 255)),
-    # cyberdeck-fm1: the default. Near-black, signal yellow for values and selections, warm off-white text,
+    # cyberdeck-fm1: the default (with the LINE style on a fresh install: black areas, 1 px rules). Pure black, signal yellow for values and selections, warm off-white text,
     # hot red for REC and warnings, cyan for the one active thing
-    ("CYBER",  (8, 8, 4),       (252, 238, 10),  (246, 242, 214), (255, 32, 72), (0, 232, 255)),
+    ("CYBER",  (0, 0, 0),       (252, 238, 10),  (246, 242, 214), (255, 32, 72), (0, 232, 255)),
 ]
 DEFAULT = "CYBER"                  # the palette at first power-on (src/panel.c, UI_DEFAULT_INDEX)
 BW = "MONO"

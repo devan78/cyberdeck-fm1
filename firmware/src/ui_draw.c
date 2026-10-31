@@ -1588,6 +1588,14 @@ static void draw_confirm(void)
     cv_blit(DLG_X, DLG_Y);
 }
 
+/* cyberdeck-fm1: a fresh install (no saved settings: panel.c settings_init) starts in the LINE style, so CYBER's areas are
+ * pure black with 1 px rules. Called once after settings_init (main.c, web/emu); saved settings keep their STYLE */
+static void settings_first_boot(void)
+{
+    if (settings_fresh)
+        ui_style = ST_LINE;                     /* (style_apply, at the first ui_draw: the tokens for LINE) */
+}
+
 /* the stored STYLE (ui_style: the menu, a settings import, a restore) into gfx.c's copy: the tokens again, all redrawn */
 static void style_apply(void)
 {
