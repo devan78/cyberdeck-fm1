@@ -17,8 +17,8 @@ static uint8_t *fav_bit(uint32_t engine, uint32_t preset, uint8_t *mask)   /* th
         *mask = (uint8_t)(1u << (preset % 8u));
         return &favorites.factory[engine][preset / 8u];
     }
-#if FELUCCA_ADPCM
-    if (engine == ENGI_ADPCM && preset < 8u) {
+#if FELUCCA_ADPCM || FELUCCA_NEON
+    if (engine == 14u && preset < 8u) {          /* ADPCM's or NEON's (cyberdeck-fm1): engine 14, one or the other */
         *mask = (uint8_t)(1u << preset);
         return &favorites.factory[15][13];
     }

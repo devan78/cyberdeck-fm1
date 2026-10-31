@@ -1687,7 +1687,7 @@ function makeMockDevice(opt = {}) {
     E("MIDI", ["USB", "TRS"], 0), E("SYNC", NDASH, 0), E("ROUT", ["CH1-4", "SEL", "CH5-8", "CH9-12", "CH13-16", "TRACK"], 0), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), E("NAME", NDASH, 0), E("LOAD", NGO, 0), E("SAVE", NGO, 0),
     E("ENG", ["ANALOG", "-", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL",
-      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE"], 0), E("SET", NGO, 0),
+      "GRAIN", "PHYS", "DRUM", "NOISE", "FM6", "SLICE", "NEON"], 0), E("SET", NGO, 0),
     E("CLRSQ", NGO, 0), E("INIT", NGO, 0),
     E("TYPE", ["ROOM", "SPRING", "HALL"], 2),       /* G_RTYPE (id 24, was G_DRCH): the reverb's model (HALL: 1.2) */
     D("-", F.INT, 0, 0, 0), D("-", F.INT, 0, 0, 0),   /* G_DRLVL, G_DRREV: inert since 1.0 */
@@ -1774,6 +1774,13 @@ function makeMockDevice(opt = {}) {
         E("DIV", ["4", "8", "16", "32", "AUTO", "MAN"], 2), D("START", F.INT, 0, 31, 0), D("PTCH", F.SEMI, -24, 24, 0),
         E("MODE", ["ONE", "GATE", "LOOP"], 0), E("REV", ["OFF", "ON"], 0), D("DCAY", F.TIME, 0, 127, 127), D("TONE", F.INT, 0, 127, 127)],
       presets: [P("CHOP", [0, 2, 0, 0, 0, 0, 127, 127], [0, 127, 127, 30], 0, 9), P("STUTTER", [0, 1, 0, 0, 1, 0, 90, 110], [0, 127, 127, 12], 0, 10)] },
+    /* 14 NEON (cyberdeck-fm1, src/eng_neon.c): the darksynth bass */
+    { name: "NEON", titles: ["OSC", "FLT"], edit: [D("SAWS", F.INT, 1, 6, 2), D("DTN", F.INT, 0, 127, 46), D("SUB", F.PCT, 0, 127, 56),
+        D("DRV", F.PCT, 0, 127, 30), D("CUT", F.CUTOFF, 0, 127, 54), D("RES", F.PCT, 0, 127, 22), D("FOLD", F.PCT, 0, 127, 0), D("KTR", F.PCT, 0, 127, 40)],
+      presets: [P("REESE", [2, 46, 56, 30, 54, 22, 0, 40], [0, 70, 112, 26], 1, 2), P("NEON CITY", [6, 62, 0, 12, 92, 14, 0, 64], [2, 80, 100, 56], 0, 4),
+        P("CHROME JAW", [3, 30, 34, 92, 46, 72, 62, 50], [0, 52, 60, 20], 1, 1), P("BLACK ICE", [2, 22, 112, 20, 34, 8, 0, 30], [0, 60, 100, 22], 1, 8),
+        P("NIGHT DRIVE", [2, 16, 62, 22, 40, 36, 0, 64], [0, 44, 30, 24], 1, 2), P("DATA SPIKE", [4, 36, 0, 30, 30, 50, 20, 80], [0, 40, 0, 40], 0, 13),
+        P("MEGACORP", [5, 52, 20, 52, 60, 30, 30, 64], [0, 56, 40, 36], 0, 9), P("RAIN PAD", [6, 42, 0, 0, 64, 10, 0, 32], [86, 90, 110, 100], 0, 5)] },
   ];
   const FM6_E = ENG.findIndex((e) => e.name === "FM6"), FM6_OWN = FM6.FACTORY_PK.length, DRUM_E = ENG.findIndex((e) => e.name === "DRUM");
   /* factory PATTERNS[] (engines.c; the device loads them from SAVE > PHRASES, presets only suggest one): absolute
@@ -2427,7 +2434,7 @@ function enumShown(d) {
 /* the order the device shows its engines in (src/engines.c ENGINE_ORDER): the lists here follow it, the protocol keeps
    the engine numbers. engineOrder(names): the indices of names in that order, "-" (a reserved number) left out; a name
    the list does not know (another firmware) follows in index order */
-const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
+const ENGINE_ORDER = ["ANALOG", "NEON", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
   "SLICE", "DRUM"];
 function engineOrder(names) {
   const rank = (n) => { const k = ENGINE_ORDER.indexOf(n); return k < 0 ? ENGINE_ORDER.length : k; };

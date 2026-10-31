@@ -44,6 +44,9 @@ static uint8_t eng_mem_owner[NPART];       /* engine index + 1 whose state is in
 #if FELUCCA_SLICE
 #include "eng_slice.c"
 #endif
+#if FELUCCA_NEON
+#include "eng_neon.c"            /* NEON: the darksynth bass (cyberdeck-fm1) */
+#endif
 #if FELUCCA_ADPCM
 #include "eng_adpcm.c"           /* ADPCM: BRR waves and an FIR echo, its DSP ported from snes_spc (adpcm_dsp.c, LGPL-2.1+) */
 #endif
@@ -72,6 +75,9 @@ static const engine_t *const ENGINES[NENGINES] = {
 #endif
 #if FELUCCA_ADPCM
     &ENG_ADPCM,                  /* 14 (ENGI_ADPCM; FELUCCA_ADPCM=0 builds without it) */
+#endif
+#if FELUCCA_NEON
+    &ENG_NEON,                   /* 14 (ENGI_NEON, cyberdeck-fm1; not with ADPCM) */
 #endif
 };
 
@@ -123,6 +129,9 @@ static const char *snd_missing(const track_t *t, uint32_t *code)
  * stores and the protocol hold them); only this table orders them */
 static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
     0,                           /* ANALOG */
+#if FELUCCA_NEON
+    14,                          /* NEON (cyberdeck-fm1): beside ANALOG */
+#endif
     12,                          /* FM6 */
 #if FELUCCA_FM4
     1,                           /* DIGITAL */

@@ -35,9 +35,17 @@
 #if FELUCCA_ADPCM && !FELUCCA_SLICE
 #error "FELUCCA_ADPCM needs FELUCCA_SLICE (ADPCM is engine 14, after SLICE)"
 #endif
-#define NENGINES (13 + FELUCCA_SLICE + FELUCCA_ADPCM)   /* SLICE (13), then ADPCM (14): the other engines keep their
-                                                         * numbers */
+#ifndef FELUCCA_NEON
+#define FELUCCA_NEON (FELUCCA_SLICE && !FELUCCA_ADPCM)   /* cyberdeck-fm1: the NEON engine (eng_neon.c), engine 14 where
+                                                          * ADPCM would be: a build has one or the other */
+#endif
+#if FELUCCA_NEON && (FELUCCA_ADPCM || !FELUCCA_SLICE)
+#error "FELUCCA_NEON is engine 14: it needs FELUCCA_SLICE and excludes FELUCCA_ADPCM"
+#endif
+#define NENGINES (13 + FELUCCA_SLICE + FELUCCA_ADPCM + FELUCCA_NEON)   /* SLICE (13), then ADPCM or NEON (14): the
+                                                         * other engines keep their numbers */
 #define ENGI_ADPCM 14u
+#define ENGI_NEON 14u
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 #define NENG_SHOWN (NENGINES - !FELUCCA_FM4)   /* the engines one can pick: PRESETS, the EDIT layer, the editor,
                                                 * in the display order of engines.c ENGINE_ORDER */

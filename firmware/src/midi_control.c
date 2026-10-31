@@ -228,6 +228,9 @@ static const uint8_t MIDI_CC_ENG[NENGINES] = {
 #if FELUCCA_ADPCM
     0x00,                                             /* ADPCM - (no filter) */
 #endif
+#if FELUCCA_NEON
+    0x56,                                             /* NEON CUT RES (cyberdeck-fm1) */
+#endif
 };
 /* a CC sets parameter id of track t as a knob would: 0..127 over its range */
 static void midi_cc_set(track_t *t, uint32_t id, uint32_t value)
