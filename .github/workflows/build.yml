@@ -70,13 +70,19 @@ jobs:
           cat > site/index.html <<HTML
           <!DOCTYPE html>
           <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>Build ${GITHUB_SHA::7}</title>
-          <style>body{background:#07060d;color:#e8e6f0;font:16px/1.6 ui-monospace,monospace;max-width:40rem;margin:3rem auto;padding:0 1rem}
-          a{color:#ff2bd6;font-size:1.25rem}small{color:#5ef0ff}</style></head><body>
-          <h1>// BUILD ${GITHUB_SHA::7}</h1>
-          <p><a href="webapp/try/">&gt; PLAY in the browser</a><br><small>the emulator: same code as the device, no CPU limit</small></p>
-          <p><a href="webapp/installer/">&gt; FLASH to the FM-1</a><br><small>Chrome or Edge, USB. Back up first. At your own risk.</small></p>
-          <p><a href="webapp/editor/">&gt; EDITOR</a></p>
+          <title>CYBERDECK ${GITHUB_SHA::7}</title>
+          <style>
+          body{background:#0a0a06;color:#f6f2d6;font:15px/1.6 ui-monospace,Menlo,monospace;max-width:40rem;margin:3rem auto;padding:0 1rem}
+          h1{color:#fcee0a;letter-spacing:.12em;border-bottom:3px solid #fcee0a;padding-bottom:.4rem}
+          a.btn{display:block;background:#fcee0a;color:#000;font-weight:700;letter-spacing:.1em;text-decoration:none;
+            padding:.8rem 1.2rem;margin:1.4rem 0 .3rem;clip-path:polygon(0 0,100% 0,100% 65%,calc(100% - 16px) 100%,0 100%)}
+          a.btn:hover{background:#00e8ff}
+          small{color:#c9c08a}.warn{color:#ff2048}
+          </style></head><body>
+          <h1>CYBERDECK // ${GITHUB_SHA::7}</h1>
+          <a class="btn" href="webapp/try/">&gt; PLAY IN BROWSER</a><small>the emulator: same code as the device, no CPU limit</small>
+          <a class="btn" href="webapp/installer/">&gt; FLASH TO FM-1</a><small>Chrome or Edge, USB. <span class="warn">Back up first. At your own risk.</span></small>
+          <a class="btn" href="webapp/editor/">&gt; EDITOR</a>
           </body></html>
           HTML
 
@@ -94,10 +100,50 @@ jobs:
         with:
           path: site
 
-      # Sound golden renders, CPU budget per preset, voices, UI layout. Report only for now: changing a sound
-      # on purpose changes its golden hash, and that should not stop the site from updating.
-      - name: Host tests (report only)
-        continue-on-error: true
+  # Sound golden renders, CPU budget per preset (on the pi32v2 code), voices, UI layout. A separate job so the site does
+  # not wait for it, and report only: changing a sound on purpose changes its golden hash.
+  test:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python packages (UI fonts and icons are rasterised at build time)
+        run: pip install Pillow fonttools
+
+      - name: Cache the JieLi toolchain and SDK files
+        id: jieli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.jieli
+            ~/fw-AC79_AIoT_SDK
+          key: jieli-${{ hashFiles('tools/get_toolchain.sh') }}-AC79NN_SDK_V1.2.1_2023-12-13
+
+      - name: JieLi toolchain (clang 4.0.1 for pi32v2)
+        if: steps.jieli.outputs.cache-hit != 'true'
+        run: tools/get_toolchain.sh
+
+      - name: JieLi AC79 SDK (only cpu/wl82/tools is used)
+        if: steps.jieli.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+          git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools
+
+      - name: Build the firmware (the tests read build/)
+        run: ./build.sh
+
+      - uses: mymindstorm/setup-emsdk@v14
+
+      - name: Host tests
         run: |
           export AC79_SDK="$HOME/fw-AC79_AIoT_SDK"
           tests/run_tests.sh
