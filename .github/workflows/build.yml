@@ -162,9 +162,24 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
 
       - name: Host tests
+        shell: bash
         run: |
           export AC79_SDK="$HOME/fw-AC79_AIoT_SDK"
-          tests/run_tests.sh
+          set +e
+          tests/run_tests.sh 2>&1 | tee build/host-tests.log
+          status=${PIPESTATUS[0]}
+          # every failing line as an annotation (the run's summary and the checks API show them), the first 50
+          grep -E "FAIL|over budget|changed|not in |error:|Error" build/host-tests.log \
+            | grep -vE " 0 (changed|failed)|, 0 (health|voice|CPU|crash)|0 FAIL|failures, 0|0 differ" \
+            | head -50 | sed -e 's/%/%25/g' -e 's/^/::warning title=host test::/'
+          exit $status
+
+      - name: Upload the test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-tests-${{ github.sha }}
+          path: build/host-tests.log
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
