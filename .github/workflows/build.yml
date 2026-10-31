@@ -49,10 +49,19 @@ jobs:
       - name: JieLi AC79 SDK (only cpu/wl82/tools is used)
         if: steps.jieli.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            --branch AC79NN_SDK_V1.2.1_2023-12-13 \
-            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
-          git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools
+          # gitee.com fails now and then (HTTP 500): retry with backoff. Once main has the cache, branches reuse it.
+          for wait in 15 30 60 0; do
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if git clone --depth 1 --filter=blob:none --sparse \
+                 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+                 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK" &&
+               git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools; then
+              exit 0
+            fi
+            [ "$wait" = 0 ] && break
+            echo "gitee clone failed; retrying in ${wait}s"; sleep "$wait"
+          done
+          echo "::error::could not fetch the JieLi AC79 SDK from gitee.com after 4 attempts"; exit 1
 
       - name: Build the firmware
         run: ./build.sh
@@ -137,10 +146,19 @@ jobs:
       - name: JieLi AC79 SDK (only cpu/wl82/tools is used)
         if: steps.jieli.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            --branch AC79NN_SDK_V1.2.1_2023-12-13 \
-            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
-          git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools
+          # gitee.com fails now and then (HTTP 500): retry with backoff. Once main has the cache, branches reuse it.
+          for wait in 15 30 60 0; do
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if git clone --depth 1 --filter=blob:none --sparse \
+                 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+                 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK" &&
+               git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools; then
+              exit 0
+            fi
+            [ "$wait" = 0 ] && break
+            echo "gitee clone failed; retrying in ${wait}s"; sleep "$wait"
+          done
+          echo "::error::could not fetch the JieLi AC79 SDK from gitee.com after 4 attempts"; exit 1
 
       - name: Build the firmware (the tests read build/)
         run: ./build.sh
