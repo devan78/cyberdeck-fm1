@@ -1331,40 +1331,53 @@ static void draw_columns(void)
 }
 
 
-/* The power-on splash (main.c fm1_main, web/emu felucca_web.c; 1.1.5): a RAISE square centred on the screen, square
- * corners (in every style; LINE too: RAISE from the palette's SURF), in it in AF_M, the ink SPL_PAD in from the left:
- * at the top the name and the version, the first line's capitals' top SPL_PAD down; at the bottom the maker and
- * "with community", the last line's capitals' bottom (its baseline) SPL_PAD up from the square's bottom. Both
- * margins are measured to the capitals (the descender of "community" hangs into the bottom one, as off a baseline).
- * The square (176 x 176) is more than the canvas (CV_MAX, 240 x 124): it is filled straight on the screen and its
- * two text bands drawn on it as canvases, the top one from the square's top edge, the bottom one to its bottom edge.
- * In the saved palette (settings_init before it) */
-#define SPL_SQ 176                                  /* the square (even: centred exactly) */
-#define SPL_X0 ((240u - SPL_SQ) / 2u)               /* its top-left on the screen (x and y) */
-#define SPL_PAD 16                                  /* the text's inset: left (its ink), top and bottom (the capitals) */
-#define SPL_PITCH 20                                /* line to line */
-static const char *const SPLASH_LINES[] = {"Felucca", FELUCCA_VERSION, "H\xFCgelton Instruments", "with community"};
-/* a band of two lines, h tall, at y on the screen: the first line's top at ly; the two lines' capitals declared
- * against al0..al1 (mode: AL_V the band centred there, AL_B the last baseline on al1) */
-static void splash_band(uint32_t y, uint32_t h, int32_t ly, const char *const *l, uint32_t mode, int32_t al0,
-                        int32_t al1, const char *tag)
-{
-    cv_begin(SPL_SQ, h, T_RAISE);
-    GFX_HOOK_ALIGN(0, al0, 0, al1, mode | AL_N(2), tag);
-    cv_text_on(SPL_PAD, ly, &AF_M, l[0], T_TEXT, T_RAISE);
-    cv_text_on(SPL_PAD, ly + SPL_PITCH, &AF_M, l[1], T_TEXT, T_RAISE);
-    cv_blit(SPL_X0, y);
-}
+/* The power-on splash (main.c fm1_main, web/emu felucca_web.c), cyberdeck-fm1: a hatch of oblique stripes runs into a
+ * slanted tag with the name, then a rule, the firmware's version (and ONLINE), then the credit to what it is built on:
+ * Felucca, its version and its maker. One canvas, 240 x SPL_H (under CV_MAX), centred on the screen, in the saved
+ * palette (settings_init before it). The stripes and the tag's two ends lean right ( / ): a pixel every SPL_SLANT rows.
+ * tests/ui_render.c checks the texts (in this order) and the layout. */
+#ifndef CYBERDECK_VERSION
+#define CYBERDECK_VERSION "v0.1.0"                  /* this firmware's version (Felucca's: FELUCCA_VERSION, felucca.c) */
+#endif
+#define SPL_NAME "CYBERDECK"
+#define SPL_X 16                                    /* the left and right margins */
+#define SPL_TAG_H 32                                /* the hatch and the tag */
+#define SPL_SLANT 2                                 /* rows per pixel of lean */
+#define SPL_LEAN ((SPL_TAG_H - 1) / SPL_SLANT)      /* the top row's lean (the bottom row: 0) */
+#define SPL_STRIPES 5
+#define SPL_STRIPE_W 4
+#define SPL_STRIPE_P 8                              /* stripe to stripe */
+#define SPL_TAG_X (SPL_X + SPL_STRIPES * SPL_STRIPE_P)   /* the tag's bottom-left corner */
+#define SPL_TAG_PAD 7                               /* the name's ink in from the tag's ends (at the capitals) */
+#define SPL_RULE_Y (SPL_TAG_H + 8)
+#define SPL_VER_Y (SPL_RULE_Y + 2 + 10)
+static inline int32_t spl_lean(int32_t r) { return (SPL_TAG_H - 1 - r) / SPL_SLANT; }
 static void draw_splash(void)
 {
-    int32_t h = SPL_PAD - AF_M_CAP_Y + SPL_PITCH + AF_M.h;     /* a band: its two lines, the descenders in */
-    int32_t lb = h - SPL_PAD - AF_M_CAP_H - AF_M_CAP_Y;         /* the bottom band's last line: its top */
+    /* the name in AF_L when the tag fits in the margins, else AF_M */
+    int fits_l = SPL_TAG_X + SPL_LEAN + text_w(&AF_L, SPL_NAME) + 2 * SPL_TAG_PAD + SPL_LEAN / 2 <= 240 - SPL_X;
+    const aafont_t *nf = fits_l ? &AF_L : &AF_M;
+    int32_t cap_y = fits_l ? AF_L_CAP_Y : AF_M_CAP_Y, cap_h = fits_l ? AF_L_CAP_H : AF_M_CAP_H;
+    int32_t tw = text_w(nf, SPL_NAME) + 2 * SPL_TAG_PAD + SPL_LEAN / 2;     /* the tag's width, row by row */
+    int32_t cy = SPL_VER_Y + AF_M.h + 12;                                   /* the credit's first line */
+    int32_t h = cy + 2 * AF_S.h, r, i;
+    if (h > (int32_t)(CV_MAX / 240u))
+        h = (int32_t)(CV_MAX / 240u);
     lcd_fill(0, 0, 240, 240, T_BG);
-    lcd_fill(SPL_X0, SPL_X0, SPL_SQ, SPL_SQ, T_RAISE);
-    splash_band(SPL_X0, (uint32_t)h, SPL_PAD - AF_M_CAP_Y, SPLASH_LINES, AL_V, SPL_PAD,
-                SPL_PAD + SPL_PITCH + AF_M_CAP_H, "splash name + version SPL_PAD from the top");
-    splash_band(SPL_X0 + SPL_SQ - (uint32_t)h, (uint32_t)h, lb - SPL_PITCH, SPLASH_LINES + 2, AL_B, 0, h - SPL_PAD,
-                "splash maker's baseline SPL_PAD from the bottom");
+    cv_begin(240, (uint32_t)h, T_BG);
+    for (r = 0; r < SPL_TAG_H; r++) {
+        int32_t o = spl_lean(r);
+        for (i = 0; i < SPL_STRIPES; i++)
+            cv_rect(SPL_X + i * SPL_STRIPE_P + o, r, SPL_STRIPE_W, 1, T_THEME);
+        cv_rect(SPL_TAG_X + o, r, tw, 1, T_THEME);
+    }
+    cv_text_on(SPL_TAG_X + SPL_LEAN / 2 + SPL_TAG_PAD, (SPL_TAG_H - cap_h) / 2 - cap_y, nf, SPL_NAME, T_INK, T_THEME);
+    cv_rect(SPL_X, SPL_RULE_Y, 240 - 2 * SPL_X, 2, T_THEME);
+    cv_text(SPL_X, SPL_VER_Y, &AF_M, CYBERDECK_VERSION, T_TEXT);
+    cv_text_r(240 - SPL_X, SPL_VER_Y, &AF_M, "ONLINE", T_ACCENT, T_BG);
+    cv_text(SPL_X, cy, &AF_S, "Felucca " FELUCCA_VERSION, T_MID);
+    cv_text(SPL_X, cy + AF_S.h, &AF_S, "H\xFCgelton Instruments", T_MID);
+    cv_blit(0, (240u - (uint32_t)h) / 2u);
     lcd_sync();
 }
 

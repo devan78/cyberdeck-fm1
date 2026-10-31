@@ -21,7 +21,7 @@
  * operator boxes overlapping or touching, no route, loop, bus or label inside a box or touching one it does not
  * connect, no two nets (one gap's routes that share an operator, the output, the loop, the label) sharing or
  * touching a pixel, everything inside the panel.
- * Output: OUTDIR/ppm/<PALETTE>_<screen>.ppm for GREY MONO GREEN PAPER NIGHT, OUTDIR/report.txt (findings, ellipsised
+ * Output: OUTDIR/ppm/<PALETTE>_<screen>.ppm for GREY MONO GREEN PAPER NIGHT CYBER, OUTDIR/report.txt (findings, ellipsised
  * free text, the draw cost), OUTDIR/text_audit.tsv (GREY, per screen: texts, icons and keycaps with their ink-box px,
  * the ellipsised ones, the texts closer than 2 px to their cell's edge, the words).
  * Alignment (gfx.c GFX_HOOK_ALIGN): every place where a text, icon or keycap is meant to sit centred (in a cell, a
@@ -1671,35 +1671,28 @@ static void draw(int s)
         setup_show("TURN RIGHT", "ALGORITHM");
         return;
     }
-    if (s == S_SPLASH) {                          /* the power-on splash (main.c, before the UI): its lines, the version
-                                                   * shown FELUCCA_VERSION (run_tests.sh: src/felucca.c's) */
-        static const char WANT[] = "Felucca|" FELUCCA_VERSION "|H\xFCgelton Instruments|with community";
+    if (s == S_SPLASH) {                          /* the power-on splash (main.c, before the UI): its texts in order, both
+                                                   * versions shown (run_tests.sh: FELUCCA_VERSION from src/felucca.c) */
+        static const char WANT[] = "CYBERDECK|" CYBERDECK_VERSION "|ONLINE|Felucca " FELUCCA_VERSION "|H\xFCgelton Instruments";
         splash_seen[0] = 0;
         in_splash = 1;
         draw_splash();
         in_splash = 0;
-        {   /* the square whole on the screen (176 x 176 at 32,32, more than the canvas): its edges and square corners
-             * RAISE, BG just outside; its text's ink 16 px in from the left and the top (the bottom: AL_B, the hook) */
-            const int32_t q0 = 32, q1 = 32 + 176 - 1;
-            uint16_t bg = host_screen[0], ra = host_screen[(uint32_t)(q0 + 1) * 240u + (uint32_t)q0 + 1];
-            int32_t i, x, y, ix = 999, iy = 999, bad = ra == bg;
-            for (i = q0 - 1; i <= q1 + 1; i++) {
-                int32_t in = i >= q0 && i <= q1;
-                bad |= host_screen[(uint32_t)(q0 - 1) * 240u + (uint32_t)i] != bg || host_screen[(uint32_t)(q1 + 1) * 240u + (uint32_t)i] != bg
-                    || host_screen[(uint32_t)i * 240u + (uint32_t)(q0 - 1)] != bg || host_screen[(uint32_t)i * 240u + (uint32_t)(q1 + 1)] != bg;
-                if (in)
-                    bad |= host_screen[(uint32_t)q0 * 240u + (uint32_t)i] != ra || host_screen[(uint32_t)q1 * 240u + (uint32_t)i] != ra
-                        || host_screen[(uint32_t)i * 240u + (uint32_t)q0] != ra || host_screen[(uint32_t)i * 240u + (uint32_t)q1] != ra;
-            }
-            for (y = q0; y <= q1; y++)
-                for (x = q0; x <= q1; x++)
-                    if (host_screen[(uint32_t)y * 240u + (uint32_t)x] != ra) {
-                        if (x - q0 < ix) ix = x - q0;
-                        if (y - q0 < iy) iy = y - q0;
-                    }
-            if (bad || ix != 16 || iy != 16) {
-                if (rep) fprintf(rep, "FIND %-26s the splash square not whole (edges %s) or its text not 16 px in (left %d, top %d)\n",
-                                 cur_name, bad ? "off" : "ok", (int)ix, (int)iy);
+        {   /* cyberdeck-fm1: the canvas centred, BG at the corners; the first stripe's bottom row at x = SPL_X and its top
+             * row SPL_LEAN to the right (the lean); the gap after the last stripe BG; the tag's bottom-left corner THEME */
+            const int32_t h = SPL_VER_Y + AF_M.h + 12 + 2 * AF_S.h > (int32_t)(CV_MAX / 240u) ? (int32_t)(CV_MAX / 240u)
+                                                                                               : SPL_VER_Y + AF_M.h + 12 + 2 * AF_S.h;
+            const int32_t y0 = (240 - h) / 2, yb = y0 + SPL_TAG_H - 1;   /* the canvas's top, the hatch's bottom row */
+            uint16_t bg = host_screen[0];
+#define PX(x, y) host_screen[(uint32_t)(y) * 240u + (uint32_t)(x)]
+            int bad = PX(239, 0) != bg || PX(0, 239) != bg || PX(239, 239) != bg
+                   || PX(SPL_X - 1, yb) != bg || PX(SPL_X, yb) == bg                       /* the first stripe, bottom */
+                   || PX(SPL_X + SPL_LEAN, y0) == bg || PX(SPL_X + SPL_LEAN - 1, y0) != bg /* .. its top, leaning right */
+                   || PX(SPL_TAG_X - 1, yb) != bg || PX(SPL_TAG_X, yb) == bg               /* the gap, the tag */
+                   || PX(SPL_X, y0 + SPL_RULE_Y) == bg;                                    /* the rule */
+#undef PX
+            if (bad) {
+                if (rep) fprintf(rep, "FIND %-26s the splash's hatch, tag or rule is not where it should be\n", cur_name);
                 nfind++;
             }
         }
@@ -1708,7 +1701,7 @@ static void draw(int s)
             nfind++;
         } else {
             static uint8_t said;
-            if (!said++) printf("ui_render: the splash shows the version " FELUCCA_VERSION " (FELUCCA_VERSION) and its lines\n");
+            if (!said++) printf("ui_render: the splash shows " CYBERDECK_VERSION " on Felucca " FELUCCA_VERSION " and its lines\n");
         }
         return;
     }
@@ -2261,7 +2254,7 @@ int main(int argc, char **argv)
     const char *out = argc > 1 ? argv[1] : "build/ui_new";
     char path[600];
     uint32_t p, s;
-    static const char *const SHOW[] = {"GREY", "MONO", "GREEN", "PAPER", "NIGHT"};   /* (NIGHT: #50, to review) */
+    static const char *const SHOW[] = {"GREY", "MONO", "GREEN", "PAPER", "NIGHT", "CYBER"};   /* (NIGHT: #50, to review; CYBER: cyberdeck-fm1, the default) */
     snprintf(path, sizeof path, "%s/report.txt", out);
     rep = fopen(path, "w");
     if (!rep) { fprintf(stderr, "cannot write %s\n", path); return 1; }
