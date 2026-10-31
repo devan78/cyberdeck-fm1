@@ -168,10 +168,14 @@ jobs:
           set +e
           tests/run_tests.sh 2>&1 | tee build/host-tests.log
           status=${PIPESTATUS[0]}
-          # every failing line as an annotation (the run's summary and the checks API show them), the first 50
-          grep -E "FAIL|over budget|changed|not in |error:|Error" build/host-tests.log \
-            | grep -vE " 0 (changed|failed)|, 0 (health|voice|CPU|crash)|0 FAIL|failures, 0|0 differ" \
-            | head -50 | sed -e 's/%/%25/g' -e 's/^/::warning title=host test::/'
+          # the failing lines (a check ending FAIL, a FAILED summary, a budget miss), all in one annotation (a step shows
+          # at most 10), so the run's summary and the checks API list them
+          fails=$(grep -E "(FAIL|FAILED)[[:space:]]*$|FAILED|over budget \(|not in tests/" build/host-tests.log \
+                  | grep -vE "[[:space:]]ok[[:space:]]*$|0 CPU entries over budget" | head -80)
+          if [ -n "$fails" ]; then
+            msg=$(printf '%s' "$fails" | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=host test failures::$msg"
+          fi
           exit $status
 
       - name: Upload the test log
