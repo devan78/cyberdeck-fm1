@@ -303,6 +303,181 @@ static void graph_grid(const track_t *t, uint16_t c)
     if (song.playing && t->seq_idx < len && t->seq_idx / 16u == ui.bank)
         cv_rect(40 + (int32_t)(t->seq_idx % 16u) * 12, y0 - 1, 10, 3, T_TEXT);
 }
+/* SEQ > LENS (cyberdeck-fm1, ui.c lens_on). Top: the cursor's page of all four parts, a row each (its number on the left,
+ * the selected part's in the accent): a note (a DRUM part: any hit) a block, THEME on the selected part and SEL on the
+ * others, the step playing ACCENT; an empty step a dot (the beats brighter); past a part's LEN nothing. The lens: a frame
+ * round the cursor's four steps of the selected part, two lines from it to the box beneath, where those four steps are
+ * big, one under each card: the step's number, its note in L (a DRUM part: the selected lane, its name or --), its
+ * marks (ACC SLD TIE, x2..x4), its velocity as a bar; the cursor framed, the step playing marked under its number.
+ * FOCUS (a key held, ui.c lens_focus): the page's 16 steps as the keys under the screen (the held one framed), that
+ * step's number and note big, its length and marks, what the keys do */
+#define LENS_CX(i) (24 + (int32_t)(i) * 12 + (int32_t)((i) / 4u) * 3)   /* a step's cell on the map (16: 24 .. 223) */
+#define LENS_ROW(r) (4 + (int32_t)(r) * 11)
+#define LENS_BOX 54                                     /* the box of the four big steps: 54 .. 117 */
+static int lens_step_on(const track_t *t, const step_t *st, uint32_t lane_only)
+{
+    if (drum_track(t))
+        return lane_only ? (int)((step_lanes(st) >> ui.lane) & 1u) : step_lanes(st) != 0u;
+    return step_on(st) && st->n;
+}
+static void lens_marks(char *b, const track_t *t, const step_t *st)   /* "ACC SLD x2", "TIE", "" */
+{
+    uint32_t n;
+    b[0] = 0;
+    if (st->time == ST_TIE) {
+        str_cpy(b, "TIE", 12);
+        return;
+    }
+    if (!lens_step_on(t, st, 1u))
+        return;
+    if (st->flags & SF_ACCENT) str_cpy(b + str_len(b), "ACC ", 12);
+    if (st->flags & SF_SLIDE) str_cpy(b + str_len(b), "SLD ", 12);
+    if (step_ratchet(st) > 1u) {
+        str_cpy(b + str_len(b), "x", 12);
+        fmt_int(b + str_len(b), (int32_t)step_ratchet(st));
+    }
+    n = str_len(b);
+    if (n && b[n - 1u] == ' ')
+        b[n - 1u] = 0;
+}
+static void lens_note(char *b, const track_t *t, const step_t *st)   /* the step's note (a DRUM part: the lane) or -- */
+{
+    if (!lens_step_on(t, st, 1u))
+        str_cpy(b, "--", 8);
+    else if (drum_track(t))
+        str_cpy(b, drum_lane_abbr(t, ui.lane), 8);
+    else
+        note_name(b, st->note[0]);
+}
+static void lens_two(char *b, uint32_t n)               /* 1-based, two digits: "05" */
+{
+    b[0] = (char)('0' + (n + 1u) / 10u % 10u);
+    b[1] = (char)('0' + (n + 1u) % 10u);
+    b[2] = 0;
+}
+static void graph_focus(const track_t *t, uint16_t c)
+{
+    uint32_t i, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), base = ui.bank * 16u, si = base + lens_key;
+    const step_t *st = &seq_steps(t)[si % NSTEP];
+    char b[16];
+    const aafont_t *f;
+    for (i = 0; i < 16u; i++) {                        /* the keys: lit a note, the step playing ACCENT, the held one framed */
+        int32_t x = 8 + (int32_t)i * 14;
+        uint32_t k = base + i;
+        if (k >= len)
+            continue;
+        if (i == lens_key) {
+            cv_frame(x - 1, 3, 14, 24, T_ACCENT);
+            cv_frame(x, 4, 12, 22, T_ACCENT);
+        } else {
+            cv_rect(x, 4, 12, 22, song.playing && t->seq_idx == k ? T_ACCENT :
+                                  lens_step_on(t, &seq_steps(t)[k], 1u) ? c : T_RAISE);
+        }
+        if (i % 4u == 0u) {
+            fmt_int(b, (int32_t)k + 1);
+            cv_text_on(x, 27, &AF_S, b, T_MID, T_SURF);
+        }
+    }
+    str_cpy(b, "STEP ", 16);
+    lens_two(b + 5, si);
+    cv_text_on(10, 44, &AF_S, b, T_MID, T_SURF);
+    lens_note(b, t, st);
+    f = text_w(&AF_L, b) <= 110 && large_face_has(b) ? &AF_L : &AF_M;
+    cv_text_on(8, 56, f, b, lens_step_on(t, st, 1u) ? c : T_DIM, T_SURF);
+    {                                                   /* its length and marks, a line each, on the right */
+        int32_t y = 46;
+        if (drum_track(t)) {                            /* (a DRUM part: the lane the key turns on and off) */
+            cv_text_on(130, y, &AF_M, drum_lane_name(t, ui.lane), T_TEXT, T_SURF);
+            y += 18;
+        }
+        if (lens_step_on(t, st, 1u) && !drum_track(t)) {
+            str_cpy(b, "LEN ", 16);
+            fmt_int(b + 4, (int32_t)note_len(t, si));
+            cv_text_on(130, y, &AF_M, b, T_TEXT, T_SURF);
+            y += 18;
+        }
+        if (st->time == ST_TIE) {
+            cv_text_on(130, y, &AF_M, "TIED", T_MID, T_SURF);
+            y += 18;
+        }
+        if (lens_step_on(t, st, 1u) && (st->flags & SF_SLIDE)) {
+            cv_text_on(130, y, &AF_M, "SLIDE", T_ACCENT, T_SURF);
+            y += 18;
+        }
+        if (lens_step_on(t, st, 1u) && ((st->flags & SF_ACCENT) || (drum_track(t) && ((step_accents(st) >> ui.lane) & 1u))))
+            cv_text_on(130, y, &AF_M, "ACCENT", T_REC, T_SURF);
+    }
+    cv_text_on(10, 100, &AF_S, "LET GO: DONE   EDIT: CLEAR", T_MID, T_SURF);
+}
+static void graph_lens(const track_t *t, uint16_t c)
+{
+    uint32_t r, i, j, base = ui.bank * 16u, g = (ui.cursor % 16u) / 4u, sel = trk_index(t) % NTRK;
+    int32_t fx, fy, fw;
+    char b[16];
+    if (lens_focus()) {
+        graph_focus(t, c);
+        return;
+    }
+    for (r = 0; r < 4u && r < NTRK; r++) {             /* the map: four parts, the cursor's page */
+        const track_t *u = &trk[r];
+        uint32_t len = (uint32_t)clamp(u->p[P_SLEN], 1, NSTEP);
+        int32_t y = LENS_ROW(r);
+        b[0] = (char)('1' + r);
+        b[1] = 0;
+        cv_text_on(8, y - 4, &AF_S, b, r == sel ? T_ACCENT : T_MID, T_SURF);
+        for (i = 0; i < 16u && base + i < len; i++) {
+            const step_t *st = &seq_steps(u)[base + i];
+            int32_t x = LENS_CX(i);
+            int now = song.playing && u->seq_idx == base + i;
+            if (lens_step_on(u, st, 0u))
+                cv_rect(x, y, 10, 8, now ? T_ACCENT : r == sel ? c : T_SEL);
+            else if (st->time == ST_TIE && !drum_track(u))   /* a TIE: the note before it goes on (a bar to it) */
+                cv_rect(x - (i % 4u == 0u ? 5 : 2), y + 2, i % 4u == 0u ? 15 : 12, 4, now ? T_ACCENT : r == sel ? c : T_SEL);
+            else
+                cv_rect(x + 4, y + 3, 2, 2, now ? T_ACCENT : i % 4u == 0u ? T_MID : T_DIM);
+        }
+    }
+    fx = LENS_CX(g * 4u) - 2;                           /* the lens round the cursor's four steps of the selected part */
+    fy = LENS_ROW(sel % 4u) - 2;
+    fw = LENS_CX(g * 4u + 3u) + 12 - fx;
+    cv_frame(fx, fy, fw, 12, T_ACCENT);
+    cv_line(fx, fy + 11, 3, LENS_BOX, T_ACCENT);
+    cv_line(fx + fw - 1, fy + 11, 236, LENS_BOX, T_ACCENT);
+    cv_frame(3, LENS_BOX, 234, 64, T_ACCENT);
+    for (j = 0; j < 4u; j++) {                          /* the four steps, big, one under each card */
+        uint32_t si = base + g * 4u + j, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP);
+        int32_t x = CARD_X(j), w;
+        const step_t *st = &seq_steps(t)[si % NSTEP];
+        const aafont_t *f;
+        int on;
+        if (j)
+            cv_rect(x - 1, LENS_BOX + 1, 1, 62, T_GRID);
+        if (si >= len)
+            continue;
+        on = lens_step_on(t, st, 1u);
+        if (si == ui.cursor)
+            cv_frame(x + 1, LENS_BOX + 2, CARD_W - 2, 60, T_TEXT);
+        lens_two(b, si);
+        w = text_w(&AF_S, b);
+        cv_text_on(x + (CARD_W - w) / 2, LENS_BOX + 3, &AF_S, b, si == ui.cursor ? T_ACCENT : T_MID, T_SURF);
+        if (song.playing && t->seq_idx == si)
+            cv_rect(x + CARD_W / 2 - 6, LENS_BOX + 17, 12, 2, T_ACCENT);
+        lens_note(b, t, st);
+        f = text_w(&AF_L, b) <= CARD_W - 3 && large_face_has(b) ? &AF_L : &AF_M;
+        w = text_w(f, b);
+        cv_text_on(x + (CARD_W - w) / 2, f == &AF_L ? LENS_BOX + 16 : LENS_BOX + 22, f, b, on ? c : T_DIM, T_SURF);
+        lens_marks(b, t, st);
+        if (b[0]) {
+            w = text_w(&AF_S, b);
+            cv_text_on(x + (CARD_W - w) / 2, LENS_BOX + 42, &AF_S, b, T_ACCENT, T_SURF);
+        }
+        if (on) {                                       /* the velocity: a bar under the step */
+            int32_t v = st->flags & SF_ACCENT ? 127 : ev_sval(st, EVK_VEL);
+            cv_rect(x + 6, LENS_BOX + 57, CARD_W - 12, 2, T_GRID);
+            cv_rect(x + 6, LENS_BOX + 57, (CARD_W - 12) * v / 127, 2, st->flags & SF_ACCENT ? T_TEXT : c);
+        }
+    }
+}
 /* SEQ > DETAIL (1.5.1, Discussion #199): the cursor's 16 steps as four lanes, the knobs' order top to bottom, each
  * named on the left (the lane of the knob just turned in the accent): CHANCE a bar as high as the chance, RATCH the
  * step's bar in its 2..4 parts (as the roll draws a ratchet), NUDGE a tick left / right of the step's middle, VEL a bar
@@ -1155,7 +1330,7 @@ static void page_title(char *ti)
             if (i == ui.page)
                 k = n;
         }
-    str_cpy(ti, pt ? pt : grid_on() && !detail_on() ? "GRID" : pg->title, 12);
+    str_cpy(ti, pt ? pt : grid_on() && !detail_on() ? "GRID" : lens_focus() ? "FOCUS" : pg->title, 12);
     if (n > 1) {
         str_cpy(ti + str_len(ti), " ", 4);
         fmt_int(ti + str_len(ti), (int32_t)k);
@@ -1256,6 +1431,15 @@ static uint32_t graph_signature(void)
             h = (h ^ (proll.lo + 1u)) * 16777619u;
             h = (h ^ pr_held()) * 16777619u;
         }
+    }
+    if (pg->graph == GR_LENS) {                          /* LENS (cyberdeck-fm1): every part's steps and playhead, the lens,
+                                                         * the key held */
+        uint32_t r;
+        for (r = 0; r < 4u && r < NTRK; r++)
+            h = (h ^ steps_hash(&trk[r]) ^ (song.playing ? trk[r].seq_idx + 1u : 0u) * 2654435761u ^
+                 (uint32_t)trk[r].p[P_SLEN] * 7919u) * 16777619u;
+        h = (h ^ (ui.cursor * 7919u + ui.bank * 613u + ui.lane * 104723u + (lens_key + 1u) * 40503u +
+                  trk_index(t) * 3571u + (ui.hot_t ? ui.hot_col + 1u : 0u) * 977u)) * 16777619u;
     }
     return h;
 }
@@ -2281,6 +2465,10 @@ static void draw_graph(void)
                 graph_grid(t, c);
             else
                 graph_roll(t, c);
+            break;
+        case GR_LENS:                                 /* cyberdeck-fm1 */
+            cv_oy = 0;
+            graph_lens(t, c);
             break;
         case GR_SCALE:
             graph_scale(t, c);

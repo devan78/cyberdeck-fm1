@@ -396,7 +396,7 @@ static uint32_t large_kind(void)
         return home_tracks() ? LK_LABEL : LK_TALL;      /* a list page; the rows' names in M: draw_home_tracks) */
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_PATS || g == GR_SONG || g == GR_ROLL ||
-           g == GR_SLICES || g == GR_EVENTS ? LK_LABEL : LK_TALL;
+           g == GR_SLICES || g == GR_EVENTS || g == GR_LENS ? LK_LABEL : LK_TALL;
 }
 /* the geometry of the page shown: the cards' height, the panel's top and height */
 static uint32_t card_h(void) { return large_kind() == LK_TALL ? LG_CARD_H : CARD_H; }
@@ -603,6 +603,18 @@ static int detail_on(void)
 {
     return !ui.home && !ui.menu && !ui.confirm && cur_page()->scope == SC_STEP && str_eq(cur_page()->title, "DETAIL");
 }
+/* SEQ > LENS (cyberdeck-fm1; params.c, after DETAIL): the cursor's page of all four parts as a 4 x 16 map, the lens over
+ * the cursor's four steps of the selected part, those four big beneath (ui_graph.c graph_lens). KNOB 1 the cursor (the
+ * lens follows), 2 NOTE (a DRUM part: LANE), 3 VEL, 4 CHANCE of the cursor step (ui_input.c lens_turn). The keys are the
+ * steps and none sounds (seq.c keyboard_block: song.grid 4): a white key tapped turns its step of the page on or off
+ * (a DRUM part: the selected lane's hit); held, the page is FOCUS: that step big, KNOB 1..4 its VEL CHANCE RATCH NUDGE,
+ * EDIT clears it. Black keys 10 / 11: the page down / up, as on the grid. The state: the key held */
+#define LENS_TAP_MS 350u
+static uint8_t lens_key = 0xFFu;      /* the white key place held (0..15), 0xFF none */
+static uint8_t lens_edited;           /* a knob turned (or EDIT) while it was held: no toggle on its release */
+static uint32_t lens_t0;              /* fm1_ms at its press */
+static int lens_on(void) { return !ui.home && !ui.menu && !ui.confirm && cur_page()->graph == GR_LENS; }
+static int lens_focus(void) { return lens_on() && lens_key != 0xFFu && !ui.layer; }
 /* GLO > SONG (1.2): the white keys A B C D (A3 B3 C4 D4, white places 2..5: seq.c song_key) set the selected cell's slot;
  * they do not sound there, the other keys play as anywhere (seq.c keyboard_block: song.grid 3) */
 static int song_keys_on(void) { return !ui.home && !ui.menu && !ui.confirm && !ui.layer && cur_page()->graph == GR_SONG; }

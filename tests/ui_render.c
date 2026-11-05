@@ -692,6 +692,7 @@ static void state(void)                          /* a playing song with steps on
 {
     uint32_t i;
     ui_power_on();
+    lens_key = 0xFFu;                            /* (cyberdeck-fm1: LENS's key held, FOCUS) */
     seq_fill = 0;                                /* (1.5.5: GLO's FILL, held in layer_glo_fill only; */
     eu.on = 0;                                   /* SEQ TOOLS' EUCLID, open in layer_seq_euclid*) */
     if (large_on) ui_prefs |= PREF_LARGE;
@@ -804,7 +805,8 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_DETAIL_COND, S_DETAIL_FILL, S_AUTO_COND, S_GLO_FILL, S_SEQ_EUCLID, S_SEQ_EUCLID_DRUM, S_SEQ_EUCLID_64,
        S_MENU_SELECT, S_PROJECT_ERASE, S_CONFIRM_ERASE_PROJ, S_TOOLS_CLEAN, S_CONFIRM_CLEAN,
        S_MENU_MIDI_TRACK, S_MENU_MIDI_TCH_UNUSED, S_MENU_MIDI_AUTO, S_HOME_TRACKS_MIDI, S_MIXER_MIDI, S_EDIT_PHASE_FOLD,
-       S_EDIT_NEON, S_EDIT_NEON_FLT, S_HOME_NEON, S_COUNT };   /* (cyberdeck-fm1: NEON's pages; ANALOG's without it) */
+       S_EDIT_NEON, S_EDIT_NEON_FLT, S_HOME_NEON,   /* (cyberdeck-fm1: NEON's pages; ANALOG's without it) */
+       S_LENS, S_LENS_PLAYING, S_LENS_DRUM, S_FOCUS, S_FOCUS_DRUM, S_COUNT };   /* (cyberdeck-fm1: SEQ > LENS, FOCUS) */
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "phrases", "project", "tools", "song_empty", "song", "step", "auto_steps", "auto_add_chance", "automation", "drum",
     "drum_hand", "drum_cym", "mixer", "mixer_from_home", "mixer_pan", "env", "env_dest", "lfo", "mod", "fx", "slicer", "dly", "scl", "chord", "chord_wide", "chord_off", "chord_kit", "arp",
@@ -836,7 +838,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "layer_seq_euclid_64",
     "menu_select", "project_erase", "confirm_erase_project", "tools_clean", "confirm_clean",
     "menu_midi_track", "menu_midi_channels_unused", "menu_midi_auto_select", "home_tracks_midi", "mixer_midi", "edit_phase_fold",
-    "edit_neon", "edit_neon_flt", "home_neon"};
+    "edit_neon", "edit_neon_flt", "home_neon", "lens", "lens_playing", "lens_drum", "focus", "focus_drum"};
 
 /* the STEP page's piano roll (ui_graph.c graph_roll) on track 1, stopped unless said: an empty pattern; ACID in
  * A minor; POLY chords (Am7 F C G, tied); a line with ties, slides and accents in C major; LEN 32 on its second
@@ -1258,6 +1260,25 @@ static void setup(int s)
     case S_EDIT_GRAIN: eng(8); go_title("EDIT 2"); break;
     case S_EDIT_PHYS: eng(9); go_title("EDIT 1"); break;
     case S_EDIT_PHASE_FOLD: eng(2); TSEL->p[P_E7] = 80; go_title("EDIT 2"); ui.hot_col = 3; ui.hot_t = 30; break;   /* 1.5.5 FOLD (#104) */
+    /* cyberdeck-fm1 SEQ > LENS: the four parts (song_steps), a slide and a ratchet on part 1, the cursor on step 6; PLAYING
+     * the playheads on step 10; DRUM part 4 selected (the lane SD); FOCUS step 7 held, VEL just turned */
+    case S_LENS: case S_LENS_PLAYING: case S_LENS_DRUM: case S_FOCUS: case S_FOCUS_DRUM: {
+        uint32_t r;
+        song_steps(0);
+        trk[0].step[5].flags |= SF_SLIDE;
+        step_set_ratchet(&trk[0].step[6], 2u);
+        trk[0].step[6].note[0] = 51;
+        trk[0].step[6].n = 1;
+        trk[0].step[6].time = ST_NOTE;
+        song.sel = s == S_LENS_DRUM || s == S_FOCUS_DRUM ? 3u : 0u;
+        if (song.sel == 3u) { eng(ENGI_DRUM); ui.lane = 1; }
+        go_title("LENS");
+        cursor_set(s == S_FOCUS || s == S_FOCUS_DRUM ? 6 : 5);
+        song.playing = s == S_LENS_PLAYING;
+        for (r = 0; r < NTRK; r++) trk[r].seq_idx = 9;
+        if (s == S_FOCUS || s == S_FOCUS_DRUM) { lens_key = 6; lens_edited = 1; ui.hot_col = 0; ui.hot_t = 30; }
+        break;
+    }
 #if FELUCCA_NEON
     /* cyberdeck-fm1 NEON: EDIT 1 (SAWS DTN SUB DRV) with DTN just turned; EDIT 2 (CUT RES FOLD KTR); HOME (CUT RES DTN DRV) */
     case S_EDIT_NEON: eng(ENGI_NEON); go_title("EDIT 1"); ui.hot_col = 1; ui.hot_t = 30; break;

@@ -1594,6 +1594,7 @@ static int test_categories(void)
     return bad;
 }
 
+
 static int test_display_preferences(void)
 {
     int bad = 0, k;
@@ -2696,7 +2697,7 @@ static int test_presets_knob(void)
             int same_snd = TSEL->preset == before.preset && TSEL->eng_req == before.eng_req &&
                            !memcmp(TSEL->p, before.p, sizeof before.p);
             int same_steps = !memcmp(TSEL->step, before.step, sizeof before.step);
-            if (g == GR_ROLL) {
+            if (g == GR_ROLL || g == GR_LENS) {           /* (cyberdeck-fm1: LENS too) */
                 cur_ok &= ui.cursor == 1u && same_snd && same_steps && ui.page == i;
                 n_cur++;
             } else if (g == GR_USER) {
@@ -2720,7 +2721,7 @@ static int test_presets_knob(void)
             }
         }
     }
-    bad += check("#92 PRESETS on STEP (and 1.5.1's DETAIL): the step cursor; the sound and the steps stay", cur_ok && n_cur == 2u);
+    bad += check("#92 PRESETS on STEP (and 1.5.1's DETAIL, LENS): the step cursor; the sound and the steps stay", cur_ok && n_cur == 3u);
     bad += check("#94 PRESETS on USER, PROJECT, PHRASES, SONG, AUTOMATION: the selection (KNOB 1's); nothing loaded", sel_ok);
     bad += check("#94 PRESETS on TOOLS does nothing", tools_ok);
     bad += check("#94 PRESETS elsewhere (EDIT, ENV, LFO, FX, SCL, ARP, MIXER, GLOBAL, ...): the next sound, the steps stay",
@@ -2775,7 +2776,7 @@ static int test_page_cycles(void)
     ok = 1;
     for (i = 0; i < NPAGES; i++) {                       /* every page in a family its button reaches, and its LED */
         uint32_t f = PAGES[i].fam;
-        ok &= f != FAM_SEQ || PAGES[i].graph == GR_ROLL || PAGES[i].graph == GR_EVENTS;
+        ok &= f != FAM_SEQ || PAGES[i].graph == GR_ROLL || PAGES[i].graph == GR_EVENTS || PAGES[i].graph == GR_LENS;
         ok &= f != FAM_GLO || PAGES[i].graph == GR_SONG;   /* (1.2: GLO's only page) */
         ok &= f != FAM_TRK || PAGES[i].graph == GR_TRK || str_eq(PAGES[i].title, "CLOCK");   /* HOME's: MIXER CLOCK */
         ok &= PAGES[i].graph != GR_TRK || f == FAM_TRK;
@@ -2785,7 +2786,7 @@ static int test_page_cycles(void)
     }
     for (i = 0; i < NPAGES; i++)
         ok &= !str_eq(PAGES[i].title, "PATTERN") && !str_eq(PAGES[i].title, "CHANCE") && !str_eq(PAGES[i].title, "AUTO LIST");
-    bad += check("1.2: SEQ has STEP and AUTOMATION only; SONG is GLO's only page, PHRASES SAVE's, MIXER and CLOCK HOME's "
+    bad += check("1.2: SEQ has STEP, DETAIL, LENS and AUTOMATION only; SONG is GLO's only page, PHRASES SAVE's, MIXER and CLOCK HOME's "
                  "(their LED HOME)", ok);
     {   /* 1.2: GLOBAL and SYSTEM are gone; their knobs: BPM SWG CLK on HOME > CLOCK, TUNE and ROUT on no page (the MENU's),
          * MIDI SYNC CPU on none (INFO shows the USB state and the CPU) */
@@ -6725,6 +6726,110 @@ static void rc_run(uint32_t lb, uint32_t mode, uint32_t k, uint32_t pg, int late
     frames(400);
     rc_take(b);
 }
+/* cyberdeck-fm1: SEQ > LENS and FOCUS (ui.c lens_on, ui_input.c lens_keys / lens_turn, ui_graph.c graph_lens). The keys are
+ * the steps and never sound; a tap toggles a step (the note of the step before it), a hold is FOCUS (VEL CHANCE RATCH NUDGE
+ * on KNOB 1..4, the release no tap), EDIT clears, SAVE held undoes; off FOCUS KNOB 1..4 STEP NOTE VEL CHANCE; a DRUM part
+ * toggles the selected lane; the LEDs show the page's steps */
+static int test_lens(void)
+{
+    int bad = 0, ok;
+    uint32_t i;
+    track_t *t;
+    ui_power_on();
+    t = TSEL;
+    set_engine_of(t, 0);
+    for (i = 0; i < NSTEP; i++)
+        step_clear(&t->step[i]);
+    t->p[P_SLEN] = 32;
+    t->step[1].time = ST_NOTE; t->step[1].n = 1; t->step[1].note[0] = 43;   /* G2 on step 2: the note the taps take */
+    go_title("LENS"); frame();
+    ok = lens_on() && song.grid == 4u && str_eq(cur_page()->title, "LENS") && !lens_focus();
+    key_down(white(4)); frame();
+    ok &= !gates() && lens_focus() && ui.cursor == 4u;    /* (held: FOCUS, nothing sounds) */
+    key_up(white(4)); frame();
+    ok &= !lens_focus() && step_on(&t->step[4]) && t->step[4].n == 1u && t->step[4].note[0] == 43u;
+    bad += check("LENS: the keys are the steps and never sound; a tap turns a step on with the note before it (G2)", ok);
+    key_down(white(4)); frame(); key_up(white(4)); frame();
+    ok = !step_on(&t->step[4]) && t->step[4].time == ST_REST;
+    hold(B_SAVE);
+    ok &= step_on(&t->step[4]) && t->step[4].note[0] == 43u;
+    bad += check("  a tap again: off; SAVE held: back on (one undo a tap)", ok);
+    key_down(white(4)); frames(600); key_up(white(4)); frame();
+    ok = step_on(&t->step[4]);
+    bad += check("  held longer than a tap and let go untouched: FOCUS only, the step stays", ok);
+    key_down(white(4)); frame();
+    turn(EN_K1, -10);
+    ok = lens_focus() && ev_sval(&t->step[4], EVK_VEL) < 96;
+    turn(EN_K2, -5);
+    ok &= step_chance(&t->step[4]) < 100u;
+    turn(EN_K3, 1);
+    ok &= step_ratchet(&t->step[4]) == 2u;
+    turn(EN_K4, 2);
+    ok &= step_nudge(&t->step[4]) > 0;
+    frame();
+    {
+        char ti[24];
+        page_title(ti);
+        ok &= ti[0] == 'F' && ti[1] == 'O' && ti[2] == 'C' && ti[3] == 'U' && ti[4] == 'S';   /* ("FOCUS 3/4") */
+    }
+    key_up(white(4)); frame();
+    ok &= step_on(&t->step[4]) && step_ratchet(&t->step[4]) == 2u && !lens_focus();
+    bad += check("FOCUS: KNOB 1..4 the held step's VEL CHANCE RATCH NUDGE; its release is no tap (the step stays)", ok);
+    key_down(white(4)); frame();
+    press(B_EDIT);
+    ok = !step_on(&t->step[4]) && msg_is("STEP CLEARED");
+    key_up(white(4)); frame();
+    ok &= !step_on(&t->step[4]);                          /* (cleared, and the release toggled nothing back) */
+    bad += check("  EDIT while held: the step cleared, its release no tap", ok);
+    key_down(white(6)); frame();
+    turn(EN_K1, 3);
+    ok = msg_is("NO NOTE") && !step_on(&t->step[6]);
+    key_up(white(6)); frame();
+    ok &= !step_on(&t->step[6]);
+    bad += check("  FOCUS on an empty step: NO NOTE, nothing written", ok);
+    cursor_set(1); frame();
+    turn(EN_K1, 2);
+    ok = ui.cursor == 3u;
+    cursor_set(1);
+    turn(EN_K2, 2);
+    ok &= t->step[1].note[0] == 45u;
+    turn(EN_K3, -6);
+    ok &= ev_sval(&t->step[1], EVK_VEL) < 96;
+    turn(EN_K4, -3);
+    ok &= step_chance(&t->step[1]) < 100u;
+    turn(EN_PRESET, 1);
+    ok &= ui.cursor == 2u;
+    bad += check("LENS off FOCUS: KNOB 1 the cursor (PRESETS too), 2 NOTE, 3 VEL, 4 CHANCE of the cursor step", ok);
+    {   /* the LEDs: the page's steps lit; the black page keys: page 2 (steps 17..32) */
+        uint32_t m;
+        frame();
+        m = key_leds(0);
+        ok = ((m >> white(1)) & 1u) && !((m >> white(6)) & 1u);
+        key_down(key_at(1, GK_PGUP)); frame(); key_up(key_at(1, GK_PGUP)); frame();
+        ok &= ui.bank == 1u;
+        key_down(white(0)); frame(); key_up(white(0)); frame();
+        ok &= step_on(&t->step[16]) && t->step[16].note[0] == 45u;   /* (the note before it, wrapping: step 2's, now A2) */
+        bad += check("  the keys' LEDs show the page's steps; black key 11 the next page, where a tap writes step 17", ok);
+    }
+    set_engine_of(t, ENGI_DRUM);
+    for (i = 0; i < NSTEP; i++)
+        step_clear(&t->step[i]);
+    t->p[P_SLEN] = 16;
+    go_title("LENS"); frame();
+    ui.lane = 1;
+    key_down(white(2)); frame(); key_up(white(2)); frame();
+    ok = (step_lanes(&t->step[2]) >> 1) & 1u;
+    turn(EN_K2, 1);
+    ok &= ui.lane == 2u;
+    key_down(white(2)); frame(); key_up(white(2)); frame();
+    ok &= (step_lanes(&t->step[2]) & 6u) == 6u && !gates();
+    bad += check("LENS on a DRUM part: a tap toggles the selected lane's hit, KNOB 2 the lane; silent", ok);
+    go_title("STEP"); frame();
+    ok = !lens_on() && song.grid != 4u;
+    bad += check("  leaving LENS: the keys are the keyboard again", ok);
+    return bad;
+}
+
 static int test_layer_knob_race(void)
 {
     static const uint8_t LB[4] = {B_FX, B_GLO, B_SCL, B_EDIT};
@@ -6740,7 +6845,7 @@ static int test_layer_knob_race(void)
                         continue;
                     if (mode == 2u && LB[l] == B_EDIT && pg < NPAGES &&   /* (EDIT's tap acts there: no lock) */
                         (PAGES[pg].graph == GR_USER || PAGES[pg].graph == GR_SLOTS || PAGES[pg].graph == GR_ROLL ||
-                         PAGES[pg].graph == GR_EVENTS))
+                         PAGES[pg].graph == GR_EVENTS || PAGES[pg].graph == GR_LENS))
                         continue;
                     rc_run(LB[l], mode, k, pg, 0, &a0, &b0);
                     rc_run(LB[l], mode, k, pg, 1, &a1, &b1);
@@ -6906,14 +7011,17 @@ static int test_seq_tools(void)
     press(B_SEQ); frames(320);
     ok = str_eq(cur_page()->title, "DETAIL") && msg_is("HOLD [SEQ] QUICK");   /* (1.5.1, #199) */
     press(B_SEQ); frames(320);
+    ok &= cur_page()->graph == GR_LENS && str_eq(cur_page()->title, "LENS");   /* (cyberdeck-fm1) */
+    press(B_SEQ); frames(320);
     ok &= cur_page()->graph == GR_EVENTS && str_eq(cur_page()->title, "AUTOMATION");
     press(B_SEQ); frames(320);
     ok &= str_eq(cur_page()->title, "STEP");
     press(B_SEQ); frames(320);
     press(B_SEQ); frames(320);
+    press(B_SEQ); frames(320);
     ok &= cur_page()->graph == GR_EVENTS;
-    bad += check("1.2: a tap on STEP: DETAIL (1.5.1), AUTOMATION, then STEP again (three SEQ pages; the hint until the layer "
-                 "was opened)", ok);
+    bad += check("1.2: a tap on STEP: DETAIL (1.5.1), LENS, AUTOMATION, then STEP again (four SEQ pages; the hint until the "
+                 "layer was opened)", ok);
     go_title("ENV"); frame();
     press(B_SEQ); frames(320);
     ok = cur_page()->graph == GR_EVENTS;                /* (the SEQ page shown last) */
@@ -7260,6 +7368,8 @@ static int test_layer_lock(void)
     ok = str_eq(cur_page()->title, "STEP") && !ui.lock;
     press(B_SEQ); frames(400);
     ok &= str_eq(cur_page()->title, "DETAIL") && !ui.lock && !ui.layer;   /* (1.5.1) */
+    press(B_SEQ); frames(400);
+    ok &= str_eq(cur_page()->title, "LENS") && !ui.lock && !ui.layer;     /* (cyberdeck-fm1) */
     press(B_SEQ); frames(400);
     ok &= str_eq(cur_page()->title, "AUTOMATION") && !ui.lock && !ui.layer;
     press(B_SEQ);
@@ -10030,6 +10140,7 @@ int main(void)
     bad += test_favorites();
     bad += test_categories();
     bad += test_display_preferences();
+    bad += test_lens();                                   /* (cyberdeck-fm1) */
     bad += test_menu_tabs();
     bad += test_menu_project_rows();
     bad += test_information();

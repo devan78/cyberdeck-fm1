@@ -954,6 +954,34 @@ static void engine_columns(void)
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
     draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
 }
+/* card c: the step's CHANCE, RATCH, NUDGE or VEL (k: EVK_*), DIM where it does not play (DETAIL, LENS's FOCUS) */
+static void sd_card(uint32_t c, uint32_t k, const step_t *st)
+{
+    char val[12];
+    int32_t v = ev_sval(st, k), r;
+    int on = sd_takes(st, k);
+    const char *u = "", *lb = k == EVK_CHANCE ? "CHANCE" : k == EVK_RATCH ? "RATCH" : k == EVK_NUDGE ? "NUDGE" : "VEL";
+    if (k == EVK_CHANCE) {                             /* (1.5.5: a condition, "1:4" "FILL", its card COND) */
+        u = ev_chance_fmt(val, v);
+        r = v > 100 ? (v - 100) * 1000 / (int32_t)NCOND : v * 10;
+    } else if (k == EVK_RATCH) {
+        val[0] = 'x';
+        fmt_int(val + 1, v);
+        r = (v - 1) * 1000 / 3;
+    } else if (k == EVK_NUDGE) {
+        ev_nudge_fmt(val, v);
+        u = v ? "/16" : "";
+        r = (v + 8) * 1000 / 15;
+        on &= ev_nudge_plays(TSEL, st);
+    } else {
+        fmt_int(val, v);
+        u = st->flags & SF_ACCENT ? "ACC" : "";
+        r = v * 1000 / 127;
+        on &= !(st->flags & SF_ACCENT);
+    }
+    draw_column(c, k == EVK_CHANCE && v > 100 ? "COND" : lb, val, u, on ? VAL(c) : T_DIM, r, ICON_AUTO);
+}
+
 static void draw_columns(void)
 {
     uint32_t c;
@@ -1192,33 +1220,37 @@ static void draw_columns(void)
     }
     if (detail_on()) {                                  /* DETAIL (1.5.1, #199): the cursor step's CHANCE RATCH NUDGE VEL;
                                                          * DIM where they do not play (ui_input.c sd_turn) */
-        static const char *const SD_LABEL[4] = {"CHANCE", "RATCH", "NUDGE", "VEL"};
         const step_t *st = &seq_steps(TSEL)[ui.cursor];
-        for (c = 0; c < 4u; c++) {
-            uint32_t k = SD_KIND[c];
-            int32_t v = ev_sval(st, k), r;
-            int on = sd_takes(st, k);
-            const char *u = "";
-            if (k == EVK_CHANCE) {                     /* (1.5.5: a condition, "1:4" "FILL", its card COND) */
-                u = ev_chance_fmt(val, v);
-                r = v > 100 ? (v - 100) * 1000 / (int32_t)NCOND : v * 10;
-            } else if (k == EVK_RATCH) {
-                val[0] = 'x';
-                fmt_int(val + 1, v);
-                r = (v - 1) * 1000 / 3;
-            } else if (k == EVK_NUDGE) {
-                ev_nudge_fmt(val, v);
-                u = v ? "/16" : "";
-                r = (v + 8) * 1000 / 15;
-                on &= ev_nudge_plays(TSEL, st);
-            } else {
-                fmt_int(val, v);
-                u = st->flags & SF_ACCENT ? "ACC" : "";
-                r = v * 1000 / 127;
-                on &= !(st->flags & SF_ACCENT);
-            }
-            draw_column(c, k == EVK_CHANCE && v > 100 ? "COND" : SD_LABEL[c], val, u, on ? VAL(c) : T_DIM, r, ICON_AUTO);
+        for (c = 0; c < 4u; c++)
+            sd_card(c, SD_KIND[c], st);
+        return;
+    }
+    if (lens_on()) {                                    /* LENS (cyberdeck-fm1): STEP NOTE VEL CHANCE of the cursor step; FOCUS
+                                                         * (a key held): VEL CHANCE RATCH NUDGE of that step (ui_input.c lens_turn) */
+        const step_t *st = &seq_steps(TSEL)[ui.cursor];
+        if (lens_focus()) {
+            static const uint8_t FK[4] = {EVK_VEL, EVK_CHANCE, EVK_RATCH, EVK_NUDGE};
+            for (c = 0; c < 4u; c++)
+                sd_card(c, FK[c], st);
+            return;
         }
+        {
+            char sn[8], sl[8];
+            fmt_int(sn, (int32_t)ui.cursor + 1);
+            str_cpy(sl, "/", 8);
+            fmt_int(sl + 1, TSEL->p[P_SLEN]);
+            draw_column(0, "STEP", sn, sl, VAL(0u), -1, ICON_AUTO);
+        }
+        if (drum_track(TSEL)) {
+            draw_column(1, "LANE", drum_lane_name(TSEL, ui.lane), "", VAL(1u), -1, ICON_AUTO);
+        } else if (step_on(st) && st->n) {
+            note_name(val, st->note[0]);
+            draw_column(1, "NOTE", val, st->n > 1u ? "+" : "", VAL(1u), -1, ICON_AUTO);
+        } else {
+            draw_column(1, "NOTE", "--", "", T_DIM, -1, ICON_AUTO);
+        }
+        sd_card(2, EVK_VEL, st);
+        sd_card(3, EVK_CHANCE, st);
         return;
     }
     if (cur_page()->graph == GR_ROLL && lock_held()) {   /* a step held: what KNOB 1..4 lock (ui_input.c lock_turn) */

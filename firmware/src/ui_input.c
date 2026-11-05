@@ -298,11 +298,33 @@ static uint32_t step_leds(void)
     return m;
 }
 
-/* 1: the keys show a map of their own (NAME, a layer's map: SCL's scale, FX; the DRUM grid, SLICES), lit or
+/* SEQ > LENS (cyberdeck-fm1, ui.c lens_on): bit k = white key k lit where its step of the page holds a note (a DRUM
+ * part: the selected lane's hit), the step playing turned around (a chaser, as a step sequencer's keys), the key held
+ * for FOCUS lit; past LEN dark */
+static uint32_t lens_leds(void)
+{
+    const track_t *t = TSEL;
+    uint32_t k, m = 0, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP);
+    for (k = 0; k < 27u; k++) {
+        uint32_t p = key_place(k), i = ui.bank * 16u + p, on;
+        const step_t *st;
+        if (key_black(k) || i >= len)
+            continue;
+        st = &seq_steps(t)[i];
+        on = drum_track(t) ? (step_lanes(st) >> ui.lane) & 1u : (uint32_t)step_on(st);
+        if (song.playing && t->seq_idx == i)
+            on ^= 1u;
+        if (on || p == lens_key)
+            m |= 1u << k;
+    }
+    return m;
+}
+
+/* 1: the keys show a map of their own (NAME, a layer's map: SCL's scale, FX; the DRUM grid, SLICES, LENS), lit or
  * dark; 0: the keys held and the notes playing, over the idle glow */
 static int keys_own(void)
 {
-    return (name_on() && !ui.menu) || ui.layer || grid_on()
+    return (name_on() && !ui.menu) || ui.layer || grid_on() || lens_on()
 #if FELUCCA_SLICE
            || (!ui.menu && !name_on() && slice_page_on())
 #endif
@@ -373,7 +395,7 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
     uint32_t c;
     if (br)
         *br = 0;
-    c = name_on() && !ui.menu ? name_leds() : ui.layer ? layer_leds(br) : grid_on() ? grid_leds() :
+    c = name_on() && !ui.menu ? name_leds() : ui.layer ? layer_leds(br) : grid_on() ? grid_leds() : lens_on() ? lens_leds() :
                  (fm1_in.notes & ~kb_layer) | play_leds() | step_leds() | (song_keys_on() ? song_leds() : 0u);
 #if FELUCCA_SLICE
     if (!ui.layer && !ui.menu && !name_on() && slice_page_on())
@@ -963,6 +985,107 @@ static void step_edit(uint32_t slot, int32_t steps)
         motion_undo_done(TSEL);
 }
 
+/* ------------------------------------------------------ SEQ > LENS --- */
+/* cyberdeck-fm1 (ui.c lens_on). KNOB 1 the cursor (the lens follows), 2 NOTE (a DRUM part: LANE; step_edit's), 3 VEL,
+ * 4 CHANCE of the cursor step (DETAIL's, sd_turn); a key held (FOCUS, ui.c lens_focus: the cursor is that step) KNOB
+ * 1..4 its VEL CHANCE RATCH NUDGE, and its release is no tap */
+static void lens_turn(uint32_t slot, int32_t steps)
+{
+    static const uint8_t FOCUS_SD[4] = {3, 0, 1, 2};      /* VEL CHANCE RATCH NUDGE: sd_turn's slots (SD_KIND) */
+    slot &= 3u;
+    if (lens_focus()) {
+        lens_edited = 1;
+        sd_turn(FOCUS_SD[slot], steps);
+        return;
+    }
+    if (slot == 0u)
+        cursor_move(ui.cursor + steps);
+    else if (slot == 1u)
+        step_edit(1u, steps);                             /* NOTE (a DRUM part: LANE, grid_edit) */
+    else
+        sd_turn(slot == 2u ? 3u : 0u, steps);             /* VEL, CHANCE */
+}
+
+/* white key place p tapped: its step of the page on or off, one undo. A DRUM part: the selected lane's hit (grid_hit).
+ * On: the note of the nearest step before it that holds one (wrapping inside LEN; none: the last note entered), as a
+ * step recorded; off: the note and its TIEs go (its locks stay, as a grid hit's) */
+static void lens_toggle(uint32_t p)
+{
+    track_t *t = TSEL;
+    uint32_t i = ui.bank * 16u + p, len = (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP), j, n;
+    step_t *st = &t->step[i % NSTEP];
+    if (i >= len)
+        return;
+    if (chain_busy()) {
+        ui_message("STOP TO EDIT");
+        return;
+    }
+    step_undo_take(t, 0);                                 /* (SAVE held puts it back) */
+    if (drum_track(t)) {
+        grid_hit(t, i, ui.lane, 2u);
+    } else if (step_on(st)) {
+        n = note_len(t, i);
+        for (j = 0; j < n; j++)
+            step_clear(&t->step[i + j]);
+    } else {
+        uint8_t nt = last_note;
+        for (j = 1; j < len; j++) {
+            const step_t *b = &t->step[(i + len - j) % len];
+            if (step_on(b) && b->n) {
+                nt = b->note[0];
+                break;
+            }
+        }
+        step_clear(st);
+        st->time = ST_NOTE;
+        st->n = 1;
+        st->note[0] = nt;
+        last_note = nt;
+    }
+    motion_undo_done(t);
+}
+
+/* each pass: the key held for FOCUS let go (or LENS left): a tap (shorter than LENS_TAP_MS, no knob turned, no EDIT)
+ * toggles its step */
+static void lens_release(void)
+{
+    uint32_t k;
+    int on = lens_on() && !ui.layer;
+    if (lens_key == 0xFFu)
+        return;
+    for (k = 0; on && k < 27u; k++)
+        if (!key_black(k) && key_place(k) == lens_key && ((fm1_in.notes >> k) & 1u))
+            return;                                       /* still held */
+    if (on && !lens_edited && fm1_ms - lens_t0 < LENS_TAP_MS)
+        lens_toggle(lens_key);
+    lens_key = 0xFFu;
+    ui.force = 1;
+}
+
+/* LENS's keys (song.grid 4, presses): a white key inside LEN is held for FOCUS (the cursor goes to its step; one at a
+ * time), black keys 10 / 11 the page down / up (not during FOCUS) */
+static void lens_keys(uint32_t pressed)
+{
+    uint32_t k, len = (uint32_t)clamp(TSEL->p[P_SLEN], 1, NSTEP);
+    for (k = 0; k < 27u; k++) {
+        uint32_t p = key_place(k);
+        if (!((pressed >> k) & 1u))
+            continue;
+        if (key_black(k)) {
+            if (lens_key == 0xFFu && (p == GK_PGUP || p == GK_PGDN))
+                page_go(p == GK_PGUP ? 1 : -1);
+            continue;
+        }
+        if (lens_key != 0xFFu || ui.bank * 16u + p >= len)
+            continue;
+        lens_key = (uint8_t)p;
+        lens_t0 = fm1_ms;
+        lens_edited = 0;
+        cursor_set((int32_t)(ui.bank * 16u + p));
+        ui.force = 1;
+    }
+}
+
 static void edit_param(uint32_t slot, int32_t steps)
 {
     int16_t *vp;
@@ -1001,7 +1124,10 @@ static void edit_param(uint32_t slot, int32_t steps)
         ui_message("STOP TO EDIT"); return;
     }
     if (pg->scope == SC_STEP) {
-        step_edit(slot, steps);
+        if (lens_on())
+            lens_turn(slot, steps);                       /* (cyberdeck-fm1: LENS, FOCUS) */
+        else
+            step_edit(slot, steps);
         return;
     }
     if (pg->scope == SC_TRK) {
@@ -1315,7 +1441,8 @@ static void presets_turn(int32_t s)
     }
     if (ui.home || g == GR_BROWSE) {
         preset_step(s);
-    } else if (g == GR_ROLL || g == GR_USER || g == GR_SLOTS || g == GR_PATS || g == GR_SONG || g == GR_EVENTS) {
+    } else if (g == GR_ROLL || g == GR_USER || g == GR_SLOTS || g == GR_PATS || g == GR_SONG || g == GR_EVENTS ||
+               g == GR_LENS) {
         edit_param(0, s);                                 /* KNOB 1's (STEP: STOP TO EDIT while a song plays) */
         ui.hot_col = 0;
         ui.hot_t = 40;
@@ -1375,6 +1502,17 @@ static int page_tap(uint32_t b)
             ui_message("STOP TO EDIT");
         else
             sd_reset();
+        return 1;
+    }
+    if (b == B_EDIT && lens_on()) {                      /* LENS (cyberdeck-fm1): the step held (FOCUS) or the cursor's */
+        if (chain_busy()) { ui_message("STOP TO EDIT"); return 1; }
+        step_undo_take(TSEL, 0);
+        step_clear(&TSEL->step[ui.cursor]);
+        (void)motion_clear_locks(TSEL, ui.cursor);
+        motion_undo_done(TSEL);
+        lens_edited = 1;                                  /* (its key's release: no tap) */
+        ui_message("STEP CLEARED");
+        str_cpy(ui.msg2, "[SAVE] HOLD TO UNDO", sizeof ui.msg2);
         return 1;
     }
     if (b == B_EDIT && song.seq_mode && !ui.home && cur_page()->graph == GR_ROLL) {   /* STEP: EDIT clears the step */
@@ -1779,8 +1917,11 @@ static void ui_input(void)
         slice_keys_pick(notes);
 #endif
     lock_keys();                                        /* (a grid key on a hit let go: the hit goes) */
+    lens_release();                                     /* (LENS: the key held let go, a tap toggles its step) */
     if (song.grid == 3u) {
         song_keys(notes);
+    } else if (song.grid == 4u) {
+        lens_keys(notes);
     } else if (song.grid) {
         grid_keys(notes);
     } else if (song.seq_mode && cur_page()->graph == GR_ROLL) {   /* STEP */
