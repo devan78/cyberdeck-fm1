@@ -66,7 +66,7 @@
 #                   back, stopping at the next note and at LEN, chords, undo, TIME elsewhere, the DRUM grid untouched,
 #                   the longer note played), a step's VEL as it plays (96 by default, ACC 127, drum hits) and
 #                   SEQ > AUTOMATION's VEL rows (SHOW / HIDE, KNOB 4, EDIT, undo).
-# DETAIL 1.5.1 (tests/detail_test.c, #199): SEQ > DETAIL (STEP -> DETAIL -> AUTOMATION), KNOB 1..4 the cursor step's
+# DETAIL 1.5.1 (tests/detail_test.c, #199): SEQ > DETAIL (STEP -> DETAIL -> LENS -> AUTOMATION), KNOB 1..4 the cursor step's
 #                   CHANCE RATCH NUDGE VEL walked with PRESETS (NO NOTE on a REST / empty step), the same values as
 #                   AUTOMATION's rows (gone at their default; EDIT there deletes one), EDIT resets, undo per gesture, the
 #                   DRUM grid's keys picking steps (several held), a chord's ratchet, playback, STEP's marks.

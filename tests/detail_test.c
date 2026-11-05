@@ -104,18 +104,20 @@ static int page_cycle(void)
     ok &= str_eq(cur_page()->title, "DETAIL") && detail_on() && cur_page()->graph == GR_ROLL && ui.cursor == 4u &&
           song.seq_mode;
     press(B_SEQ); frames(320);
+    ok &= cur_page()->graph == GR_LENS && !detail_on() && ui.cursor == 4u;   /* (cyberdeck-fm1: LENS, the same cursor) */
+    press(B_SEQ); frames(320);
     ok &= cur_page()->graph == GR_EVENTS && !detail_on();
     press(B_SEQ); frames(320);
     ok &= str_eq(cur_page()->title, "STEP") && !detail_on();
-    bad += check("SEQ: STEP -> DETAIL (the same cursor) -> AUTOMATION -> STEP", ok);
+    bad += check("SEQ: STEP -> DETAIL (the same cursor) -> LENS -> AUTOMATION -> STEP", ok);
     go_detail();
     {
         char ti[20];
         page_title(ti);
-        ok = str_eq(ti, "DETAIL 2/3");
+        ok = str_eq(ti, "DETAIL 2/4");                 /* (cyberdeck-fm1: four SEQ pages with LENS) */
     }
     ok &= help_page() && str_eq(help_page(), "[PRESETS]STEP[K1]CHANCE, 1:4, FILL");
-    bad += check("  its footer title DETAIL 2/3 (not the scale), its HELP hint", ok);
+    bad += check("  its footer title DETAIL 2/4 (not the scale), its HELP hint", ok);
     return bad;
 }
 
